@@ -1,6 +1,6 @@
 #!groovy
 node('linux') {
-    slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', channel: 'scmdockerdemo', color: 'good', message: 'Picking up the slack!', tokenCredentialId: 'jenkins-slack-integration'
+    slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', channel: 'scmdockerdemo', color: 'good', message: '${SNAPSHOT}', tokenCredentialId: 'jenkins-slack-integration'
 }
 
 pipeline {
