@@ -18,7 +18,7 @@ slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci
 stage 'DEV'
 build job: 'SCM/SCM_dockerDemo-scmScript/', parameters: [string(name: 'SNAPSHOT', value: '')]
 input id: 'UDUCP', message: 'Update scmdockerdemo service?', parameters: [[$class: 'DynamicReferenceParameter', choiceType: 'ET_TEXT_BOX', description: '', name: 'SNAPSHOT', omitValueField: false, randomName: 'choice-parameter-18754605303716994', referencedParameters: 'PROJECT', script: [$class: 'ScriptlerScript', parameters: [PROJECT: 'scmDockerDemo', '': ''], scriptlerScriptId: 'SNAPSHOT.groovy']]]
-}
+
 /*
 
 
