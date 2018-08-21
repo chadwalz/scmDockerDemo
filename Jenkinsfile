@@ -1,5 +1,11 @@
 #!groovy
 pipeline {
+	agent {
+		node {
+			label 'linuxSecondary'
+			//customWorkspace '/some/other/path'
+		}
+	}
     environment {
         REPO_NAME = 'scmDockerDemo'
 		LOD = '1.0.0'
