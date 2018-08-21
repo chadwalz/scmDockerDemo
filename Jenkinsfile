@@ -1,8 +1,23 @@
 #!groovy
-node('linux') {
-    slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', channel: 'scmdockerdemo', color: 'good', message: '${SNAPSHOT}', tokenCredentialId: 'jenkins-slack-integration'
+stage 'SCM'
+// Use scmScipt to get current SNAPSHOT
+node('linuxSecondary') {
+    sh 'pwd > pwd.current'
+    env.WORKSPACE = readFile('pwd.current')
+    echo "${env.WORKSPACE}"
+    sh "/usr/bin/java -Xmx512m -Xms256m -cp /opt/cie/bin/scmScript.jar:/opt/cie/bin/lib/*.jar com.maximus.scm.GetLatestSnapshot -r scmDockerDemo -l dev_1.0.0 > CURRENT_SNAP.txt"
+    currentSNAPSHOT = readFile('CURRENT_SNAP.txt')
+    echo "Current snapshot is $currentSNAPSHOT"
 }
-
+echo "Setting vars"
+def currentBuildNum = currentSNAPSHOT.substring(currentSNAPSHOT.lastIndexOf("_") +1)
+def currentLodNum = currentSNAPSHOT.substring(currentSNAPSHOT.indexOf("_") +1, currentSNAPSHOT.lastIndexOf("_"))
+echo 'lod=' + currentLodNum + '   buildNum=' + currentBuildNum
+slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', channel: 'scmdockerdemo', color: 'good', message: '${currentSNAPSHOT} is in flux', tokenCredentialId: 'jenkins-slack-integration'
+stage 'DEV'
+build job: 'SCM/SCM_dockerDemo-scmScript/', parameters: [string(name: 'SNAPSHOT', value: '')]
+input id: 'UDUCP', message: 'Update scmdockerdemo service?', parameters: [[$class: 'DynamicReferenceParameter', choiceType: 'ET_TEXT_BOX', description: '', name: 'SNAPSHOT', omitValueField: false, randomName: 'choice-parameter-18754605303716994', referencedParameters: 'PROJECT', script: [$class: 'ScriptlerScript', parameters: [PROJECT: 'scmDockerDemo', '': ''], scriptlerScriptId: 'SNAPSHOT.groovy']]]
+/*
 pipeline {
 
     agent {
@@ -163,7 +178,7 @@ pipeline {
             }
         }
     }
-
+*/
     post {
         /*
          * These steps will run at the end of the pipeline based on the condition.
@@ -265,8 +280,11 @@ def notifyBuild(String buildStatus = 'STARTED') {
     }
 
     // Send notifications
-    hipchatSend(color: color, notify: true, message: summary, token: "${env.HIPCHAT_TOKEN}",
-        failOnError: true, room: "${env.HIPCHAT_ROOM}", sendAs: 'Jenkins', textFormat: true)
+	slackSend (baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', 
+	channel: 'scmdockerdemo', 
+	color: color, 
+	message: '${currentSNAPSHOT} is ' + summary, 
+	tokenCredentialId: 'jenkins-slack-integration')
 
     if (buildStatus == 'FAILURE') {
         emailext attachLog: true, body: summary, compressLog: true, recipientProviders: [brokenTestsSuspects(), brokenBuildSuspects(), culprits()], replyTo: 'noreply@yourdomain.com', subject: subject, to: 'mpatel@yourdomain.com'
