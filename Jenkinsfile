@@ -1,46 +1,30 @@
 #!groovy
-node('linux') {
-    slackSend baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', channel: 'scmdockerdemo', color: 'good', message: 'Picking up the slack!', tokenCredentialId: 'jenkins-slack-integration'
-}
-
 pipeline {
-
-    agent {
-        docker {
-            image 'jenkinsslave:latest'
-            registryUrl 'http://8598567586.dkr.ecr.us-west-2.amazonaws.com'
-            registryCredentialsId 'ecr:us-east-1:3435443545-5546566-567765-3225'
-            args '-v /home/centos/.ivy2:/home/jenkins/.ivy2:rw -v jenkins_opt:/usr/local/bin/opt -v jenkins_apijenkins:/home/jenkins/config -v jenkins_logs:/var/logs -v jenkins_awsconfig:/home/jenkins/.aws --privileged=true -u jenkins:jenkins'
-        }
-    }
+	agent {
+		node {
+			label 'linuxSecondary'
+			//customWorkspace '/some/other/path'
+		}
+	}
     environment {
-        APP_NAME = 'jenkins-pipeline-demo-api'
+        REPO_NAME = 'scmDockerDemo'
+		LOD = '1.0.0'
         BUILD_NUMBER = "${env.BUILD_NUMBER}"
-        IMAGE_VERSION="v_${BUILD_NUMBER}"
-        GIT_URL="git@github.yourdomain.com:mpatel/${APP_NAME}.git"
-        GIT_CRED_ID='izleka2IGSTDK+MiYOG3b3lZU9nYxhiJOrxhlaJ1gAA='
-        REPOURL = 'cL5nSDa+49M.dkr.ecr.us-east-1.amazonaws.com'
-        SBT_OPTS='-Xmx1024m -Xms512m'
+        SVNURL = 'http://svn.maximus.com/svn/'
         JAVA_OPTS='-Xmx1024m -Xms512m'
-        WS_PRODUCT_TOKEN='FJbep9fKLeJa/Cwh7IJbL0lPfdYg7q4zxvALAxWPLnc='
-        WS_PROJECT_TOKEN='zwzxtyeBntxX4ixHD1iE2dOr4DVFHPp7D0Czn84DEF4='
-        HIPCHAT_TOKEN = 'SpVaURsSTcWaHKulZ6L4L+sjKxhGXCkjSbcqzL42ziU='
-        HIPCHAT_ROOM = 'NotificationRoomName'
     }
-
     options {
         buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '10', numToKeepStr: '20'))
         timestamps()
         //retry(3)
         timeout time:10, unit:'MINUTES'
     }
-    parameters {
+	parameters {
         string(defaultValue: "develop", description: 'Branch Specifier', name: 'SPECIFIER')
         booleanParam(defaultValue: false, description: 'Deploy to QA Environment ?', name: 'DEPLOY_QA')
         booleanParam(defaultValue: false, description: 'Deploy to UAT Environment ?', name: 'DEPLOY_UAT')
         booleanParam(defaultValue: false, description: 'Deploy to PROD Environment ?', name: 'DEPLOY_PROD')
     }
-
     stages {
         stage("Initialize") {
             steps {
@@ -51,64 +35,34 @@ pipeline {
                     echo "Deploy to QA? :: ${params.DEPLOY_QA}"
                     echo "Deploy to UAT? :: ${params.DEPLOY_UAT}"
                     echo "Deploy to PROD? :: ${params.DEPLOY_PROD}"
-                    sh 'rm -rf target/universal/*.zip'
                 }
             }
         }
         stage('Checkout') {
             steps {
                 echo 'Checkout Repo'
-                git branch: "${params.SPECIFIER}", url: "${GIT_URL}"
+                checkout([$class: 'SubversionSCM', additionalCredentials: [], browser: [$class: 'CollabNetSVN', url: 'http://svn.maximus.com/viewvc/scmDockerDemo/'], excludedCommitMessages: '', excludedRegions: '/snapshot/*', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[credentialsId: '', depthOption: 'infinity', ignoreExternalsOption: true, local: '.', remote: 'http://svn.maximus.com/svn/scmDockerDemo/lods/dev_1.0.0']], workspaceUpdater: [$class: 'CheckoutUpdater']])
             }
         }
         stage('Build') {
             steps {
-                echo 'Run coverage and CLEAN UP Before please'
-                sh './sbt -Dsbt.global.base=.sbt -Dsbt.ivy.home=/home/jenkins/.ivy2 -Divy.home=/home/jenkins/.ivy2 compile coverage test coverageReport coverageOff dist'
+				build job: 'SCM/SCM_dockerDemo-scmScript/', parameters: [string(name: 'SNAPSHOT', value: '')]
             }
         }
-        stage('Publish Reports') {
-            steps {
-                 echo 'Publish Junit Report'
-                 junit allowEmptyResults: true, testResults: 'target/test-reports/*.xml'
-
-                step([$class: 'FindBugsPublisher', canComputeNew: false, defaultEncoding: '', excludePattern: '', healthy: '', includePattern: '', pattern: 'target/scala-2.11/findbugs/report.xml', unHealthy: ''])
-
-                 echo 'Publish Junit HTML Report'
-                 publishHTML target: [
-                     allowMissing: true,
-                     alwaysLinkToLastBuild: false,
-                     keepAll: true,
-                     reportDir: 'target/reports/html',
-                     reportFiles: 'index.html',
-                     reportName: 'Test Suite HTML Report'
-                 ]
-
-                 echo 'Publish Coverage HTML Report'
-                 publishHTML target: [
-                     allowMissing: true,
-                     alwaysLinkToLastBuild: false,
-                     keepAll: true,
-                     reportDir: 'target/scala-2.11/scoverage-report',
-                     reportFiles: 'index.html',
-                     reportName: 'Code Coverage'
-                 ]
-
-                whitesource jobApiToken: '', jobCheckPolicies: 'global', jobForceUpdate: 'global', libExcludes: '', libIncludes: '', product: "${env.WS_PRODUCT_TOKEN}", productVersion: '', projectToken: "${env.WS_PROJECT_TOKEN}", requesterEmail: ''
+        stage('Static Code Coverage Analysis') {
+            parallel {
+              stage('Execute Whitesource Analysis') {
+                  steps {
+                      whitesource jobApiToken: '', jobCheckPolicies: 'global', jobForceUpdate: 'global', libExcludes: '', libIncludes: '', product: "$WS_PRODUCT_TOKEN", productVersion: '', projectToken: "$WS_PROJECT_TOKEN", requesterEmail: ''
+                  }
+              }
+              stage('SonarQube analysis') {
+                  steps {
+                      build 'SCM/scmDockerDemo_sonarqube'
+                  }
+              }
             }
         }
-        stage('SonarQube analysis') {
-            steps {
-                sh "/usr/bin/sonar-scanner"
-            }
-        }
-        stage('ArchiveArtifact') {
-            steps {
-                echo 'Archive Artifact'
-                archiveArtifacts '**/target/universal/*.zip'
-            }
-        }
-
          stage('Docker Tag & Push') {
              steps {
                  script {
@@ -129,6 +83,7 @@ pipeline {
         stage('Deploy - CI') {
             steps {
                 echo "Deploying to CI Environment."
+				input id: 'UDUCP', message: 'Update scmdockerdemo service?', parameters: [[$class: 'DynamicReferenceParameter', choiceType: 'ET_TEXT_BOX', description: '', name: 'SNAPSHOT', omitValueField: false, randomName: 'choice-parameter-18754605303716994', referencedParameters: 'PROJECT', script: [$class: 'ScriptlerScript', parameters: [PROJECT: 'scmDockerDemo', '': ''], scriptlerScriptId: 'SNAPSHOT.groovy']]]
             }
         }
 
@@ -191,6 +146,9 @@ pipeline {
             echo "BUILD FAILURE"
         }
     }
+}
+def getCurrentSnapshot() {
+    return sh(returnStdout: true, script: "/usr/bin/java -Xmx512m -Xms256m -cp /opt/cie/bin/scmScript.jar:/opt/cie/bin/lib/*.jar com.maximus.scm.GetLatestSnapshot -r scmDockerDemo -l dev_1.0.0").trim()
 }
 
 def keepThisBuild() {
@@ -265,8 +223,11 @@ def notifyBuild(String buildStatus = 'STARTED') {
     }
 
     // Send notifications
-    hipchatSend(color: color, notify: true, message: summary, token: "${env.HIPCHAT_TOKEN}",
-        failOnError: true, room: "${env.HIPCHAT_ROOM}", sendAs: 'Jenkins', textFormat: true)
+	slackSend (baseUrl: 'https://maximusworkspace.slack.com/services/hooks/jenkins-ci/', 
+	channel: 'scmdockerdemo', 
+	color: color, 
+	message: '${currentSNAPSHOT} is ' + summary, 
+	tokenCredentialId: 'jenkins-slack-integration')
 
     if (buildStatus == 'FAILURE') {
         emailext attachLog: true, body: summary, compressLog: true, recipientProviders: [brokenTestsSuspects(), brokenBuildSuspects(), culprits()], replyTo: 'noreply@yourdomain.com', subject: subject, to: 'mpatel@yourdomain.com'
